@@ -1221,6 +1221,56 @@ NotificationCheck(X1, Y1, X2, Y2, Lang := "ru") {
     return 2
 }
 
+TradeStatus(Lang := "ru") {
+    X1 := 325
+    Y1 := 445
+    X2 := 910
+    Y2 := 544
+
+    global isRunning
+    if (!isRunning)
+        return 2
+
+    static pToken := Gdip_Startup()
+    Width := X2 - X1
+    Height := Y2 - Y1
+    if (Width <= 0 || Height <= 0)
+        return 2
+
+    TempFile := A_ScriptDir . "\lib\OCR\NotificationLastScreen.png"
+    StartTime := A_TickCount
+    Duration := 60000
+
+    while (A_TickCount - StartTime < Duration) {
+        if (!isRunning)
+            return 2
+
+        pBitmap := Gdip_BitmapFromScreen(X1 . "|" . Y1 . "|" . Width . "|" . Height)
+        Gdip_SaveBitmapToFile(pBitmap, TempFile)
+        Gdip_DisposeImage(pBitmap)
+
+        RecognizedText := ocr(TempFile, Lang)
+        TrimRecognizedText := Trim(RecognizedText, " `t`r`n")
+        FileDelete, %TempFile%
+
+        if (InStr(TrimRecognizedText, "Успешно!")) {
+            LogMessage("Трейд прошел успешно")
+            Click, 850, 565
+            Sleep, 1000
+            return 1
+        } else if (InStr(TrimRecognizedText, "Отмена!")) {
+            LogMessage("Трейд отменился")
+            Click, 850, 565
+            return 0
+        }
+
+        Sleep, 250
+    }
+     
+    return 2
+}
+
+
 SearchNotification() {
     global isRunning, isChecking
     if (!isRunning || !isChecking)
@@ -1276,6 +1326,15 @@ stopSearching() {
     global isChecking := false
     LogMessage("Поиск на паузе")
 }
+
+leaveSquad() {
+    Sleep, 500
+    SendInput, {Esc}
+    Sleep, 500
+    Click, 605, 245
+    Sleep, 200
+}
+
 
 EnterPrice(Price) {
     global isRunning, isTradeRunning
@@ -1519,6 +1578,7 @@ startTrade() {
 stopTrade() {
     global isTradeRunning
     if (isTradeRunning) {
+        TradeStatus()
         isTradeRunning := false
         LogMessage("Заканчиваю трейд")
     }
@@ -1528,7 +1588,7 @@ stopTrade() {
 MacroLoop() {
 
     if (isRunning){
-        CalculatingSumItems()
+        TradeStatus()
         ; ExitFullScreen()
         ; Sleep, 2000
 
