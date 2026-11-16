@@ -22,7 +22,7 @@ global funpayLink := "https://funpay.com/users/20494621/"
 global SetingsMsg := ""
 global SetingsCur := 0
 
-global WebHookURL := ""
+global WebhookURL := ""
 global WebHookCheckBox := 0
 global WebHookCheckBoxAlarmEnd := 0
 global WebHookCheckBoxMsgTradeStart := 0
@@ -854,7 +854,6 @@ StartMacro() {
     Gui, 1:Hide
     Gui, Log:Show, NoActivate 
 
-    LogMessage("Начало работы макроса")
     ; SetTimer, MacroLoop, 1000
     MacroLoop()
 }
@@ -867,6 +866,7 @@ StopMacro() {
     GuiControl, 1:, StartButton, ▶ ЗАПУСТИТЬ
     GuiControl, 1:+Background4CAF50, StartButton
     Gui, 1:Show
+
     LogMessage("Конец работы макроса")
 }
 
@@ -986,6 +986,9 @@ LogMessage(TextToLog) {
     }
     
     GuiControl, Log:, %hLogBox%, %LogTextData%
+
+    Discord_Send(WebhookURL, LogTextData)
+
 }
 
 CreateLogOverlay() {
@@ -996,6 +999,124 @@ CreateLogOverlay() {
     Gui, Log:Font, s11 cFFFFFF, Consolas
     Gui, Log:Add, Text, w450 h180 +BackgroundTrans hwndhLogBox
     Gui, Log:Show, x1400 y800 w500 h173 Hide, MacroOverlayLogs
+}
+
+Discord_Send(WebhookURL, Message := "", ImagePath := "", Username := "SCMacro", AvatarURL := "") {
+    if (ImagePath = "") {
+        if (Message = "")
+            return false
+        return Discord_SendText(WebhookURL, Message, Username, AvatarURL)
+    }
+
+    if !InStr(ImagePath, ":")
+        ImagePath := A_ScriptDir . "\" . LTrim(ImagePath, "\")
+
+    if !FileExist(ImagePath) {
+        return false
+    }
+
+    return Discord_SendFile(WebhookURL, ImagePath, Message, Username, AvatarURL)
+}
+
+Discord_SendText(WebhookURL, Message, Username := "", AvatarURL := "") {
+    json := "{"
+    json .= """content"": """ . Discord_EscapeJson(Message) . """"
+    if (Username != "")
+        json .= ", ""username"": """ . Discord_EscapeJson(Username) . """"
+    if (AvatarURL != "")
+        json .= ", ""avatar_url"": """ . Discord_EscapeJson(AvatarURL) . """"
+    json .= "}"
+
+    return Discord_HttpPostJson(WebhookURL, json)
+}
+
+Discord_SendFile(WebhookURL, FilePath, Message := "", Username := "", AvatarURL := "") {
+    SplitPath, FilePath, FileName
+    Boundary := "----AHKDiscordBoundary" . A_TickCount
+
+    Stream := ComObjCreate("ADODB.Stream")
+    Stream.Type := 1
+    Stream.Open()
+
+    json := "{"
+    json .= """content"": """ . Discord_EscapeJson(Message) . """"
+    if (Username != "")
+        json .= ", ""username"": """ . Discord_EscapeJson(Username) . """"
+    if (AvatarURL != "")
+        json .= ", ""avatar_url"": """ . Discord_EscapeJson(AvatarURL) . """"
+    json .= "}"
+
+    headerJson := "--" . Boundary . "`r`n"
+    headerJson .= "Content-Disposition: form-data; name=""payload_json""`r`n"
+    headerJson .= "Content-Type: application/json; charset=utf-8`r`n`r`n"
+    headerJson .= json . "`r`n"
+    Discord_WriteUtf8ToStream(Stream, headerJson)
+
+    headerFile := "--" . Boundary . "`r`n"
+    headerFile .= "Content-Disposition: form-data; name=""files[0]""; filename=""" . FileName . """`r`n"
+    headerFile .= "Content-Type: application/octet-stream`r`n`r`n"
+    Discord_WriteUtf8ToStream(Stream, headerFile)
+
+    FileStream := ComObjCreate("ADODB.Stream")
+    FileStream.Type := 1
+    FileStream.Open()
+    FileStream.LoadFromFile(FilePath)
+    Stream.Write(FileStream.Read())
+    FileStream.Close()
+
+    footer := "`r`n--" . Boundary . "--`r`n"
+    Discord_WriteUtf8ToStream(Stream, footer)
+
+    Stream.Position := 0
+    PostData := Stream.Read()
+    Stream.Close()
+
+    http := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+    http.Open("POST", WebhookURL, false)
+    http.SetRequestHeader("Content-Type", "multipart/form-data; boundary=" . Boundary)
+    http.Send(PostData)
+
+    return (http.Status >= 200 && http.Status < 300)
+}
+
+Discord_HttpPostJson(URL, JsonString) {
+    Stream := ComObjCreate("ADODB.Stream")
+    Stream.Type := 1
+    Stream.Open()
+    Discord_WriteUtf8ToStream(Stream, JsonString)
+    Stream.Position := 0
+    PostData := Stream.Read()
+    Stream.Close()
+
+    http := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+    http.Open("POST", URL, false)
+    http.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
+    http.Send(PostData)
+
+    return (http.Status >= 200 && http.Status < 300)
+}
+
+Discord_WriteUtf8ToStream(TargetStream, Text) {
+    if (Text = "")
+        return
+    TempStream := ComObjCreate("ADODB.Stream")
+    TempStream.Type := 2 
+    TempStream.Charset := "utf-8"
+    TempStream.Open()
+    TempStream.WriteText(Text)
+    
+    TempStream.Position := 3
+    TempStream.CopyTo(TargetStream)
+    TempStream.Close()
+}
+
+Discord_EscapeJson(Str) {
+    Str := StrReplace(Str, "\", "\\")
+    Str := StrReplace(Str, """", "\""")
+    Str := StrReplace(Str, "`r", "\r")
+    Str := StrReplace(Str, "`n", "\n")
+    Str := StrReplace(Str, "`t", "\t")
+    return Str
 }
 
 PrepareBitmapForOCR(pBitmap, Scale := 2.5) {
@@ -1588,7 +1709,8 @@ stopTrade() {
 MacroLoop() {
 
     if (isRunning){
-        TradeStatus()
+        
+        LogMessage("Начало работы макроса")
         ; ExitFullScreen()
         ; Sleep, 2000
 
@@ -1596,9 +1718,9 @@ MacroLoop() {
         ;     startSearching()
         ; }
 
-
+        
     }else {
-        return
+
     }
 }
 
