@@ -803,10 +803,10 @@ Gui, Add, Edit, x24 y105 w380 h25 -E0x200 +Border vInputWebHook, %WebHookURL%
 Gui, Add, Button, x30 y325 w100 h30 gSaveInput, Сохранить
 
 Gui, Add, CheckBox, x27 y135 w150 h25 vWebHookCheckBox, Включить вебхук
-Gui, Add, CheckBox, x27 y160 w400 h25 vWebHookCheckBoxAlarmEnd, Включить Оповещение о конце работы макроса
-Gui, Add, CheckBox, x27 y185 w400 h25 vWebHookCheckBoxMsgTradeStart, Включить Сообщение о начале трейда
-Gui, Add, CheckBox, x27 y210 w400 h25 vWebHookCheckBoxMsgTradeEnd, Включить Сообщение о конце трейда
-Gui, Add, CheckBox, x27 y235 w400 h25 vWebHookCheckBoxScreenshotTrade, Включить Автоматический скриншот трейда
+; Gui, Add, CheckBox, x27 y160 w400 h25 vWebHookCheckBoxAlarmEnd, Включить Оповещение о конце работы макроса
+; Gui, Add, CheckBox, x27 y185 w400 h25 vWebHookCheckBoxMsgTradeStart, Включить Сообщение о начале трейда
+; Gui, Add, CheckBox, x27 y210 w400 h25 vWebHookCheckBoxMsgTradeEnd, Включить Сообщение о конце трейда
+Gui, Add, CheckBox, x27 y160 w400 h25 vWebHookCheckBoxScreenshotTrade, Включить Автоматический скриншот трейда
 
 pToken := Gdip_Startup()
 if (!pToken) {
@@ -902,12 +902,13 @@ SaveInput() {
         IniWrite, False, %ConfigFile%, WebHook, WebHookMsgTradeEnd
         IniWrite, False, %ConfigFile%, WebHook, WebHookScreenshotTrade
     }
-
-    if (RegExMatch(WebHookURL, "^https://discord\.com/api/webhooks/")) {
-        IniWrite, %WebHookURL%, %ConfigFile%, WebHook, DiscordWebHookURL
-    } else {
-        MsgBox, 16, Ошибка, Введен неверный Discord Webhook!
-        return
+    if (WebHookCheckBox == 1){
+        if (RegExMatch(WebHookURL, "^https://discord\.com/api/webhooks/")) {
+            IniWrite, %WebHookURL%, %ConfigFile%, WebHook, DiscordWebHookURL
+        } else {
+            MsgBox, 16, Ошибка, Введен неверный Discord Webhook!
+            return
+        }
     }
 
     if (StrLen(SetingsMsg) > 140) {
@@ -1000,6 +1001,24 @@ CreateLogOverlay() {
     Gui, Log:Add, Text, w450 h180 +BackgroundTrans hwndhLogBox
     Gui, Log:Show, x1400 y800 w500 h173 Hide, MacroOverlayLogs
 }
+
+Discord_SendScreen(WebhookURL, Message := "", Username := "SCMacro", AvatarURL := "") {
+    pBitmap := Gdip_BitmapFromScreen(1) ; 1 = только основной монитор
+    if !pBitmap {
+        Gdip_Shutdown(pToken)
+        return false
+    }
+    
+    TempFile := A_ScriptDir . "\lib\OCR\Discord_SendScreen.png"
+    Gdip_SaveBitmapToFile(pBitmap, TempFile)
+    Gdip_DisposeImage(pBitmap)
+    Gdip_Shutdown(pToken)
+    
+    Result := Discord_SendFile(WebhookURL, TempFile, Message, Username, AvatarURL)
+    FileDelete, %TempFile%
+    return Result
+}
+
 
 Discord_Send(WebhookURL, Message := "", ImagePath := "", Username := "SCMacro", AvatarURL := "") {
     if (ImagePath = "") {
@@ -1699,7 +1718,14 @@ startTrade() {
 stopTrade() {
     global isTradeRunning
     if (isTradeRunning) {
-        TradeStatus()
+        st := tradeStatus()
+        If (WebHookCheckBoxScreenshotTrade == 1) {
+            If (st == 1){
+                Discord_SendScreen(WebhookURL, Трейд прошел успешно!)
+            }else if (st == 2) {
+                Discord_SendScreen(WebhookURL, Трейд был отменен!)
+            }
+        }
         isTradeRunning := false
         LogMessage("Заканчиваю трейд")
     }
@@ -1709,14 +1735,14 @@ stopTrade() {
 MacroLoop() {
 
     if (isRunning){
-        
         LogMessage("Начало работы макроса")
-        ; ExitFullScreen()
-        ; Sleep, 2000
 
-        ; if (!isTradeRunning){
-        ;     startSearching()
-        ; }
+        ExitFullScreen()
+        Sleep, 2000
+
+        if (!isTradeRunning){
+            startSearching()
+        }
 
         
     }else {
