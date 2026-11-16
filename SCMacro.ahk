@@ -6,7 +6,7 @@ global version := "1.0"
 
 #Include %A_ScriptDir%\lib\Gdip_All.ahk
 #Include %A_ScriptDir%\lib\Gdip_ImageSearch.ahk
-#Include %A_ScriptDir%\lib\OCR.ahk
+#Include %A_ScriptDir%\lib\OCR\OCR.ahk
 
 IconsPath := A_ScriptDir . "\icons"
 
@@ -1187,7 +1187,7 @@ NotificationCheck(X1, Y1, X2, Y2, Lang := "ru") {
     if (Width <= 0 || Height <= 0)
         return 2
 
-    TempFile := A_ScriptDir . "\temp_ocr.png"
+    TempFile := A_ScriptDir . "\lib\OCR\NotificationLastScreen.png"
     pBitmap := Gdip_BitmapFromScreen(X1 . "|" . Y1 . "|" . Width . "|" . Height)
     Gdip_SaveBitmapToFile(pBitmap, TempFile)
     Gdip_DisposeImage(pBitmap)
@@ -1359,7 +1359,7 @@ CalculatingSumItems(Lang := "ru") {
     if (Width <= 0 || Height <= 0)
         return 0
 
-    TempFile := A_ScriptDir . "\temp_ocr.png"
+    TempFile := A_ScriptDir . "\lib\OCR\CalculatingSumItemsLastScreen.png"
     GrandTotal := 0
     Sleep, 5000
     Loop, 3 {
@@ -1418,7 +1418,7 @@ TradeCheck(Lang := "ru", TimeoutMs := 15000) {
     if (Width <= 0 || Height <= 0)
         return false
 
-    TempFile := A_ScriptDir . "\temp_ocr2.png"
+    TempFile := A_ScriptDir . "\lib\OCR\TradeCheckLastScreen.png"
     Scale := 3
     StartTime := A_TickCount
 
