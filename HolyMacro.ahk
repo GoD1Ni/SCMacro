@@ -1002,7 +1002,7 @@ PrepareBitmapForOCR(pBitmap, Scale := 2.5) {
     Width := Gdip_GetImageWidth(pBitmap)
     Height := Gdip_GetImageHeight(pBitmap)
 
-    ; 1. Сначала копируем в оригинальном размере для быстрой и точной очистки
+    ; 1. Копируем в оригинальном размере для очистки
     pTempBitmap := Gdip_CreateBitmap(Width, Height, 0x26200A)
     G1 := Gdip_GraphicsFromImage(pTempBitmap)
     Gdip_DrawImage(G1, pBitmap, 0, 0, Width, Height, 0, 0, Width, Height)
@@ -1026,19 +1026,20 @@ PrepareBitmapForOCR(pBitmap, Scale := 2.5) {
             Chroma := MaxC - MinC
             AvgLum := (R + G_val + B) // 3
 
-            ; Поджатые пороги (отсекают размытые края шрифта):
-            ; 1. Цветной текст (у чистых цветов Chroma от 113 до 168)
-            IsColorText := (Chroma > 85)
+            ; Условия для цветного и светлого текста на темном фоне:
+            ; 1. Цветной текст (разница между самым ярким и тусклым каналом > 60)
+            ; Если цвет текста темный (например, темно-синий или темно-красный), снизьте порог до 40-50
+            IsColorText := (Chroma > 60)
 
-            ; 2. Светлый текст #E5E5E5 (яркость 229)
-            IsWhiteText := (AvgLum > 226)
+            ; 2. Белый или светло-серый текст (яркость > 160)
+            ; Если нужен ТОЛЬКО цветной текст (без белого), закомментируйте строку ниже
+            IsLightText := (AvgLum > 160)
 
-            ; 3. Темно-серый текст #919191 (яркость 145)
-            IsDarkGrayText := (AvgLum < 151)
-
-            if (IsColorText || IsWhiteText || IsDarkGrayText) {
+            if (IsColorText || IsLightText) {
+                ; Текст делаем строго черным (OCR любит черный текст на белом фоне)
                 NumPut(0xFF000000, PixelAddr + 0, "UInt")
             } else {
+                ; Весь темный и серый фон делаем строго белым
                 NumPut(0xFFFFFFFF, PixelAddr + 0, "UInt")
             }
         }
@@ -1046,18 +1047,19 @@ PrepareBitmapForOCR(pBitmap, Scale := 2.5) {
 
     Gdip_UnlockBits(pTempBitmap, BitmapData)
 
-    ; 2. Теперь масштабируем уже очищенную картинку
+    ; 2. Масштабируем очищенную картинку
     NewWidth := Round(Width * Scale)
     NewHeight := Round(Height * Scale)
     pNewBitmap := Gdip_CreateBitmap(NewWidth, NewHeight, 0x21808)
     G2 := Gdip_GraphicsFromImage(pNewBitmap)
-    Gdip_SetInterpolationMode(G2, 5) ; Четкие пиксели без мыла
+    Gdip_SetInterpolationMode(G2, 5) ; NearestNeighbor (четкие пиксели без мыла)
     Gdip_DrawImage(G2, pTempBitmap, 0, 0, NewWidth, NewHeight, 0, 0, Width, Height)
     Gdip_DeleteGraphics(G2)
-    Gdip_DisposeImage(pTempBitmap)
 
+    Gdip_DisposeImage(pTempBitmap)
     return pNewBitmap
 }
+
 
 
 
