@@ -1139,58 +1139,74 @@ Discord_EscapeJson(Str) {
 }
 
 PrepareBitmapForOCR(pBitmap, Scale := 2.5) {
+    ; === НАСТРОЙКИ ЧУВСТВИТЕЛЬНОСТИ ЦВЕТОВ ===
+    ; Чем МЕНЬШЕ число, тем жирнее и чернее становятся цветные буквы.
+    RedSensitivity   := 30  ; Для красного («Чертоцвет»), желтого и сиреневого
+    GreenSensitivity := 25  ; Для зеленого («Кислотная крапива») и желтого
+    BlueSensitivity  := 30  ; Для синего («Водонос») и сиреневого («Гнозис»)
+    
+    ; Порог яркости: фон игры имеет яркость ~62, а самый тусклый текст («x 50») ~130.
+    ; Значение 105 идеально отрезает фон и черную обводку, оставляя только текст.
+    LightThreshold   := 90
+    ; ========================================
+
     Width := Gdip_GetImageWidth(pBitmap)
     Height := Gdip_GetImageHeight(pBitmap)
-
+    
     pTempBitmap := Gdip_CreateBitmap(Width, Height, 0x26200A)
     G1 := Gdip_GraphicsFromImage(pTempBitmap)
     Gdip_DrawImage(G1, pBitmap, 0, 0, Width, Height, 0, 0, Width, Height)
     Gdip_DeleteGraphics(G1)
-
+    
     Gdip_LockBits(pTempBitmap, 0, 0, Width, Height, Stride, Scan0, BitmapData)
-
+    
     Loop % Height {
         y := A_Index - 1
         RowOffset := Scan0 + (y * Stride)
         Loop % Width {
             x := A_Index - 1
             PixelAddr := RowOffset + (x * 4)
-
+            
             B := NumGet(PixelAddr + 0, "UChar")
             G_val := NumGet(PixelAddr + 1, "UChar")
             R := NumGet(PixelAddr + 2, "UChar")
-
-            MaxC := (R > G_val) ? ((R > B) ? R : B) : ((G_val > B) ? G_val : B)
+            
             MinC := (R < G_val) ? ((R < B) ? R : B) : ((G_val < B) ? G_val : B)
-            Chroma := MaxC - MinC
             AvgLum := (R + G_val + B) // 3
-            IsColorText := (Chroma > 60)
-
-            ; 2. Белый или светло-серый текст (яркость > 160)
-
-            IsLightText := (AvgLum > 160)
-
-            if (IsColorText || IsLightText) {
+            
+            IsRed   := (R - MinC > RedSensitivity)
+            IsGreen := (G_val - MinC > GreenSensitivity)
+            IsBlue  := (B - MinC > BlueSensitivity)
+            
+            IsLightText := (AvgLum > LightThreshold)
+            
+            ; Красим в ЧЕРНЫЙ сам текст (цветной или светлый)
+            if (IsRed || IsGreen || IsBlue || IsLightText) {
                 NumPut(0xFF000000, PixelAddr + 0, "UInt")
             } else {
+                ; Красим в БЕЛЫЙ фон и темную обводку вокруг букв
                 NumPut(0xFFFFFFFF, PixelAddr + 0, "UInt")
             }
         }
     }
-
+    
     Gdip_UnlockBits(pTempBitmap, BitmapData)
-
+    
     NewWidth := Round(Width * Scale)
     NewHeight := Round(Height * Scale)
+    
     pNewBitmap := Gdip_CreateBitmap(NewWidth, NewHeight, 0x21808)
     G2 := Gdip_GraphicsFromImage(pNewBitmap)
     Gdip_SetInterpolationMode(G2, 5)
     Gdip_DrawImage(G2, pTempBitmap, 0, 0, NewWidth, NewHeight, 0, 0, Width, Height)
     Gdip_DeleteGraphics(G2)
-
     Gdip_DisposeImage(pTempBitmap)
+    
     return pNewBitmap
 }
+
+
+
 
 
 
@@ -1542,7 +1558,7 @@ CalculatingSumItems(Lang := "ru") {
     ;     return 0
 
     X1 := 0, Y1 := 605, X2 := 273, Y2 := 870
-    InvertColors := false
+
     Scale := 3
     Width := X2 - X1
     Height := Y2 - Y1
@@ -1553,21 +1569,32 @@ CalculatingSumItems(Lang := "ru") {
     TempFile := A_ScriptDir . "\lib\OCR\CalculatingSumItemsLastScreen.png"
     GrandTotal := 0
     Sleep, 5000
-    Loop, 3 {
+    Loop, 1 {
         ; if (!isRunning || !isTradeRunning)
         ;     return 0
 
         pBitmap := Gdip_BitmapFromScreen(X1 . "|" . Y1 . "|" . Width . "|" . Height)
-        pPrepared := PrepareBitmapForOCR(pBitmap, Scale)
-        Gdip_DisposeImage(pBitmap)
 
-        Gdip_SaveBitmapToFile(pPrepared, TempFile)
-        Gdip_DisposeImage(pPrepared)
+        ; Увеличиваем оригинальный цветной скриншот в 2.5 раза
+        Scale := 2.5
+        NewWidth := Round(Width * Scale)
+        NewHeight := Round(Height * Scale)
+
+        pScaledBitmap := Gdip_CreateBitmap(NewWidth, NewHeight)
+        G := Gdip_GraphicsFromImage(pScaledBitmap)
+        Gdip_SetInterpolationMode(G, 7) 
+        Gdip_DrawImage(G, pBitmap, 0, 0, NewWidth, NewHeight, 0, 0, Width, Height)
+
+        Gdip_DeleteGraphics(G)
+        Gdip_DisposeImage(pBitmap)
+        Gdip_SaveBitmapToFile(pScaledBitmap, TempFile)
+        Gdip_DisposeImage(pScaledBitmap) 
 
         RecognizedText := ocr(TempFile, Lang)
         ; FileDelete, %TempFile%
 
         TrimRecognizedText := Trim(RecognizedText, " `t`r`n")
+
         CurrentTotal := 0
         FoundAny := false
 
@@ -1736,13 +1763,13 @@ MacroLoop() {
 
     if (isRunning){
         LogMessage("Начало работы макроса")
+        CalculatingSumItems()
+        ; ExitFullScreen()
+        ; Sleep, 2000
 
-        ExitFullScreen()
-        Sleep, 2000
-
-        if (!isTradeRunning){
-            startSearching()
-        }
+        ; if (!isTradeRunning){
+        ;     startSearching()
+        ; }
 
         
     }else {
