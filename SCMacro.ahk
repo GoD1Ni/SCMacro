@@ -1138,6 +1138,72 @@ Discord_EscapeJson(Str) {
     return Str
 }
 
+
+PrepareImageForOCR(pBitmap, Scale := 3) {
+    Gdip_GetImageDimensions(pBitmap, w, h)
+
+    ; 1. Сначала увеличиваем оригинал со сглаживанием (режим 7), чтобы края букв стали плавными
+    NewWidth := Round(w * Scale)
+    NewHeight := Round(h * Scale)
+
+    pScaled := Gdip_CreateBitmap(NewWidth, NewHeight)
+    G := Gdip_GraphicsFromImage(pScaled)
+    Gdip_SetInterpolationMode(G, 7) ; HighQualityBicubic
+    Gdip_DrawImage(G, pBitmap, 0, 0, NewWidth, NewHeight, 0, 0, w, h)
+    Gdip_DeleteGraphics(G)
+
+    ; 2. Ваши точные цвета текста
+    TargetColors := [0xC1A755  ; Желтый (Янтарная полынь)
+                   , 0xBB4851  ; Красный (Чертоцвет)
+                   , 0xAB5894  ; Фиолетовый (Гнозис)
+                   , 0x6C68AF  ; Синий (Водонос)
+                   , 0xB2B2B2  ; Белый (Бледнолист)
+                   , 0x56A556   ; Зеленый (Кислотная крапива)
+                   , 0x949494] 
+
+    Tolerance := 60
+
+    Gdip_LockBits(pScaled, 0, 0, NewWidth, NewHeight, Stride, Scan0, BitmapData)
+
+    Loop, %NewHeight% {
+        y := A_Index - 1
+        Loop, %NewWidth% {
+            x := A_Index - 1
+            argb := Gdip_GetLockBitPixel(Scan0, x, y, Stride)
+
+            r := (argb >> 16) & 0xFF
+            g := (argb >> 8) & 0xFF
+            b := argb & 0xFF
+
+            ; Отсекаем черную обводку и темные тени
+            if (r < 80 && g < 80 && b < 80) {
+                Gdip_SetLockBitPixel(0xFFFFFFFF, Scan0, x, y, Stride)
+                continue
+            }
+
+            isText := false
+            for _, col in TargetColors {
+                tr := (col >> 16) & 0xFF
+                tg := (col >> 8) & 0xFF
+                tb := col & 0xFF
+
+                if (Abs(r - tr) <= Tolerance && Abs(g - tg) <= Tolerance && Abs(b - tb) <= Tolerance) {
+                    isText := true
+                    break
+                }
+            }
+
+            newColor := isText ? 0xFF000000 : 0xFFFFFFFF
+            Gdip_SetLockBitPixel(newColor, Scan0, x, y, Stride)
+        }
+    }
+    Gdip_UnlockBits(pScaled, BitmapData)
+
+    return pScaled
+}
+
+
+
 BinarizeBitmap(pBitmap, Threshold := 0.5, Invert := false) {
     Width := Gdip_GetImageWidth(pBitmap)
     Height := Gdip_GetImageHeight(pBitmap)
@@ -1485,7 +1551,6 @@ CalculatingSumItems(Lang := "ru") {
     ;     return 0
 
     X1 := 0, Y1 := 605, X2 := 273, Y2 := 870
-
     Scale := 3
     Width := X2 - X1
     Height := Y2 - Y1
@@ -1496,26 +1561,18 @@ CalculatingSumItems(Lang := "ru") {
     TempFile := A_ScriptDir . "\lib\OCR\CalculatingSumItemsLastScreen.png"
     GrandTotal := 0
     Sleep, 5000
+
     Loop, 1 {
         ; if (!isRunning || !isTradeRunning)
         ;     return 0
 
         pBitmap := Gdip_BitmapFromScreen(X1 . "|" . Y1 . "|" . Width . "|" . Height)
 
-        ; Увеличиваем оригинальный цветной скриншот в 2.5 раза
-        Scale := 2.5
-        NewWidth := Round(Width * Scale)
-        NewHeight := Round(Height * Scale)
-
-        pScaledBitmap := Gdip_CreateBitmap(NewWidth, NewHeight)
-        G := Gdip_GraphicsFromImage(pScaledBitmap)
-        Gdip_SetInterpolationMode(G, 7) 
-        Gdip_DrawImage(G, pBitmap, 0, 0, NewWidth, NewHeight, 0, 0, Width, Height)
-
-        Gdip_DeleteGraphics(G)
+        pScaledBitmap := PrepareImageForOCR(pBitmap, Scale)
         Gdip_DisposeImage(pBitmap)
+
         Gdip_SaveBitmapToFile(pScaledBitmap, TempFile)
-        Gdip_DisposeImage(pScaledBitmap) 
+        Gdip_DisposeImage(pScaledBitmap)
 
         RecognizedText := ocr(TempFile, Lang)
         ; FileDelete, %TempFile%
@@ -1690,13 +1747,13 @@ MacroLoop() {
 
     if (isRunning){
         LogMessage("Начало работы макроса")
-        CalculatingSumItems()
-        ; ExitFullScreen()
-        ; Sleep, 2000
+        ; CalculatingSumItems()
+        ExitFullScreen()
+        Sleep, 2000
 
-        ; if (!isTradeRunning){
-        ;     startSearching()
-        ; }
+        if (!isTradeRunning){
+            startSearching()
+        }
 
         
     }else {
